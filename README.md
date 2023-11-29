@@ -1,2 +1,2 @@
 # sov3r
-Simple OpenVPN3 Manager
+## `S`imple `O`pen`V`PN`3` Manage`r`

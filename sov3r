@@ -1,0 +1,121 @@
+#!/bin/bash
+
+#==========================#
+# Simple OpenVPN3 Manager  #
+# by Max Gyllkrans         #
+# max.gyllkrans@binero.com #
+# Updated 30-11-2023       #
+#==========================#
+
+trap "break &>/dev/null; tput rmcup; tput cnorm" 0 # Return to normal terminal when script exits
+
+if [[ "${1}" ]]; then
+  vpn_config="${1}" # Use argument as VPN config
+else
+  vpn_config="Binero" # Default
+fi
+
+keys="
+C: Connect/Reconnect, \
+L: Connect With Log, \
+I: IP Addresses, \
+
+D: Disconnect ${vpn_config}, \
+A: Disconnect All, \
+Q: Quit Manager"
+
+connect_vpn() {
+  echo "Connecting to ${vpn_config}..."
+  openvpn3 session-start --config "${vpn_config}"
+}
+disconnect_vpn() {
+  echo "Disconnecting current ${vpn_config} session..."
+  echo "Session path: ${session_paths}"
+  openvpn3 session-manage --disconnect --config "${vpn_config}"
+}
+duplicated_vpn() {
+  echo "Disconnecting all ${vpn_config} sessions..."
+  while IFS=' ' read -ra sessions; do
+    for session in "${sessions[@]}"; do
+      echo "Session path: ${session}"
+      openvpn3 session-manage --disconnect --path "${session}"
+    done
+  done <<< "${session_paths}"
+}
+
+tput smcup # Alternate screen
+tput civis # No cursor
+
+while true; do
+  session_paths="$(openvpn3 sessions-list | \
+  awk -v pattern="Config name: ${vpn_config}" \
+  '$0 ~ pattern {print path} /Path:/ {path=$2}')"
+
+  config_sessions="$(openvpn3 sessions-list | \
+  grep --word-regexp --count "Config name: ${vpn_config}")"
+
+  header="$(echo "Managing ${vpn_config} VPN"
+  column --table --separator "," --output-separator "  |  " <(echo "${keys}")
+  openvpn3 sessions-list
+  openvpn3 session-stats --config "${vpn_config}" 2>/dev/null)"
+
+  clear
+  # Below reduces flickering
+  timeout --foreground 0.1 \
+  less --no-init --force --quiet --tilde --mouse --prompt="‎" <(echo "${header}")
+
+  read -t 2 -rsn 1 && clear
+  case ${REPLY} in
+  c | C) # Connect/reconnect
+    if [[ "${config_sessions}" -gt 1 ]]; then
+      duplicated_vpn
+    elif [[ "${config_sessions}" -eq 1 ]]; then
+      disconnect_vpn
+    fi
+    connect_vpn
+    sleep 5
+    ;;
+
+  l | L) # Connect with log
+    if [[ "${config_sessions}" -gt 1 ]]; then
+      duplicated_vpn
+    elif [[ "${config_sessions}" -eq 1 ]]; then
+      disconnect_vpn
+    fi
+    openvpn3 log --log-level 6 --config "${vpn_config}" &
+    connect_vpn
+    read -srn 1
+    ;;
+
+  d | D) # Disconnect configuration
+    if [[ "${config_sessions}" -gt 1 ]]; then
+      duplicated_vpn
+      sleep 5
+    elif [[ "${config_sessions}" -eq 1 ]]; then
+      disconnect_vpn
+      sleep 5
+    fi
+    ;;
+
+  a | A) # Disconnect all
+    if [[ "$(openvpn3 sessions-list)" != "No sessions available" ]]; then
+      echo "Disconnecting all sessions..."
+      for session in $(openvpn3 sessions-list | grep Path | cut -d ":" -f 2); do
+          session_config=$(openvpn3 session-manage --cleanup | grep "${session}" | cut -d " " -f 3)
+          echo "${session_config} - Session path: ${session}"
+          openvpn3 session-manage --disconnect --path "${session}"
+        done
+      sleep 5
+    fi
+    ;;
+
+  i | I) # IP Address
+    ip --brief --color address show
+    read -srn 1
+    ;;
+
+  q | Q) # Quit prompt
+    break
+    ;;
+  esac
+done

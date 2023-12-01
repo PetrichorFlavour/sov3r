@@ -12,7 +12,31 @@ trap "break &>/dev/null; tput rmcup; tput cnorm" 0 # Return to normal terminal w
 if [[ "${1}" ]]; then
   vpn_config="${1}" # Use argument as VPN config
 else
-  vpn_config="Binero" # Default
+  vpn_config="" # Default
+fi
+
+if [[ -z "${vpn_config}" ]]; then
+  echo -e "\
+                _____
+ ___  _____   _|___ / _ __
+/ __|/ _ \ \ / / |_ \| '__|
+\__ \ (_) \ V / ___) | |
+|___/\___/ \_/ |____/|_|
+
+\033[1;37mSet Default VPN\033[0m
+
+Import a profile.ovpn-configuration by running:
+  \033[33mopenvpn3 config-import --persistent --config <path> --name <name>\033[0m
+
+Currently imported profiles:"
+
+  openvpn3 configs-list
+
+  echo -e "\nPlease enter profile to use when executed without arguments"
+  read -p "> "
+  vpn_config="${REPLY}"
+
+  sed --in-place '0,/vpn_config=""/s//vpn_config="'${REPLY}'"/' $0
 fi
 
 keys="
